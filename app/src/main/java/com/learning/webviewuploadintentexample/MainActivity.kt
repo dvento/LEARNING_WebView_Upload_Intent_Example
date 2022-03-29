@@ -1,5 +1,6 @@
 package com.learning.webviewuploadintentexample
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -11,6 +12,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.learning.webviewuploadintentexample.databinding.ActivityMainBinding
@@ -26,7 +28,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     // LOAD ANY URL, I'VE TRIED THIS ONE BECAUSE IS WAS THE FIRST ONE ON SEARCH' RESULTS AND IT WORKS ON THE WEBVIEW. I'M NOT AFFILIATED WITH THEM
     private val URL: String = "https://imgbb.com/"
-
 
     // file upload
     private var uploadCallback: ValueCallback<Array<Uri>>? = null
@@ -69,7 +70,7 @@ class MainActivity : AppCompatActivity() {
     inner class MyWebChromeClient() : WebChromeClient() {
         override fun onShowFileChooser(
             webView: WebView?,
-            filePathCallback: ValueCallback<Array<Uri>>?,
+            filePathCallback: ValueCallback<Array<Uri>>?, // TODO: make it backward compatible
             fileChooserParams: FileChooserParams?
         ): Boolean {
             uploadCallback = filePathCallback
@@ -80,7 +81,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun createChooserIntent() {
         var photoFile: File? = null
-        var authorities: String = applicationContext.packageName + ".fileprovider"
+        val authorities: String = applicationContext.packageName + ".fileprovider"
 
         try {
             photoFile = createImageFile()
@@ -102,9 +103,19 @@ class MainActivity : AppCompatActivity() {
         // we include the camera intent in the picker intent
         chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf<Parcelable>(captureIntent))
         // launch the intent
-        // TODO: improve this deprecated call
-        startActivityForResult(chooserIntent, UPLOAD_REQUEST_CODE)
+        resultLauncher.launch(chooserIntent)
+    }
 
+    // new activityResult handling
+    var resultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            if (uploadCallback != null) {
+                // process image upload to the webview
+                processImageUpload(result.data)
+            } else {
+                Toast.makeText(this, "An error occurred while uploading the file", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     // creates the file in order to upload the camera photo to the webview
@@ -115,23 +126,10 @@ class MainActivity : AppCompatActivity() {
         val storageDir: File = getExternalFilesDir(Environment.DIRECTORY_PICTURES)!!
         return File.createTempFile(
             "JPEG_${timeStamp}", // prefix
-            ".jpg", // sufix
+            ".jpg", // suffix
             storageDir
         ).apply {
             currentPhotoPath = absolutePath
-        }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == UPLOAD_REQUEST_CODE && resultCode == RESULT_OK) {
-            if (uploadCallback != null) {
-                // process image upload to the webview
-                processImageUpload(data)
-            } else {
-                Toast.makeText(this, "An error occurred while uploading the file", Toast.LENGTH_SHORT).show()
-            }
         }
     }
 
@@ -139,8 +137,9 @@ class MainActivity : AppCompatActivity() {
         if (data != null) {
             val results: Array<Uri>
             val uriData: Uri? = data.data
+
             if (uriData != null) {
-                results = arrayOf(uriData)
+                arrayOf(uriData).also { results = it }
                 // pass the data to the webview
                 uploadCallback!!.onReceiveValue(results)
             } else {
@@ -160,6 +159,5 @@ class MainActivity : AppCompatActivity() {
             super.onBackPressed()
         }
     }
-
 
 }
